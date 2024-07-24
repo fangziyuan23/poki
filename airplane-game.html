@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飛行機のWebゲーム</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            background-color: #87CEEB; /* 空色の背景 */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // ゲームオブジェクト
+        const player = {
+            x: 400,
+            y: 550,
+            width: 50,
+            height: 30,
+            speed: 5
+        };
+
+        const enemies = [];
+        const bullets = [];
+        const enemyBullets = [];
+
+        const goal = {
+            x: 0,
+            y: 0,
+            width: 50,
+            height: 100,
+            speed: 2,
+            movingRight: true
+        };
+
+        let gameOver = false;
+        let gameWon = false;
+        let lastEnemySpawn = 0;
+
+        // キー入力の処理
+        const keys = {};
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+        });
+        document.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+
+        function movePlayer() {
+            if (keys['ArrowRight'] && player.x < canvas.width - player.width) player.x += player.speed;
+            if (keys['ArrowLeft'] && player.x > 0) player.x -= player.speed;
+            if (keys['ArrowDown'] && player.y < canvas.height - player.height) player.y += player.speed;
+            if (keys['ArrowUp'] && player.y > 0) player.y -= player.speed;
+        }
+
+        function createEnemy() {
+            const currentTime = Date.now();
+            if (currentTime - lastEnemySpawn > 900) { // 0.9秒ごとに敵を生成
+                enemies.push({
+                    x: Math.random() * (canvas.width - 50),
+                    y: -50,
+                    width: 50,
+                    height: 30,
+                    speed: 2
+                });
+                lastEnemySpawn = currentTime;
+            }
+        }
+
+        function moveEnemies() {
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                enemies[i].y += enemies[i].speed;
+                if (enemies[i].y > canvas.height) {
+                    enemies.splice(i, 1);
+                }
+            }
+        }
+
+        function createBullet() {
+            if (Math.random() < 0.1) {
+                bullets.push({
+                    x: player.x + player.width / 2,
+                    y: player.y,
+                    width: 5,
+                    height: 10,
+                    speed: 7
+                });
+            }
+        }
+
+        function moveBullets() {
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].y -= bullets[i].speed;
+                if (bullets[i].y < 0) {
+                    bullets.splice(i, 1);
+                }
+            }
+        }
+
+        function createEnemyBullet() {
+            for (let enemy of enemies) {
+                if (Math.random() < 0.01) {
+                    enemyBullets.push({
+                        x: enemy.x + enemy.width / 2,
+                        y: enemy.y + enemy.height,
+                        width: 5,
+                        height: 10,
+                        speed: 5
+                    });
+                }
+            }
+        }
+
+        function moveEnemyBullets() {
+            for (let i = enemyBullets.length - 1; i >= 0; i--) {
+                enemyBullets[i].y += enemyBullets[i].speed;
+                if (enemyBullets[i].y > canvas.height) {
+                    enemyBullets.splice(i, 1);
+                }
+            }
+        }
+
+        function moveGoal() {
+            if (goal.movingRight) {
+                goal.x += goal.speed;
+                if (goal.x + goal.width >= canvas.width) {
+                    goal.movingRight = false;
+                }
+            } else {
+                goal.x -= goal.speed;
+                if (goal.x <= 0) {
+                    goal.movingRight = true;
+                }
+            }
+        }
+
+        function checkCollisions() {
+            // プレイヤーの弾と敵の衝突
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    if (collision(bullets[i], enemies[j])) {
+                        bullets.splice(i, 1);
+                        enemies.splice(j, 1);
+                        break;
+                    }
+                }
+            }
+
+            // プレイヤーの弾と敵の弾の衝突
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                for (let j = enemyBullets.length - 1; j >= 0; j--) {
+                    if (collision(bullets[i], enemyBullets[j])) {
+                        bullets.splice(i, 1);
+                        enemyBullets.splice(j, 1);
+                        break;
+                    }
+                }
+            }
+
+            // プレイヤーの弾とゴールの衝突
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                if (collision(bullets[i], goal)) {
+                    bullets.splice(i, 1);
+                    goal.height = Math.max(goal.height - 10, 20); // ゴールを小さくする（最小サイズは20）
+                    break;
+                }
+            }
+
+            // 敵の弾とプレイヤーの衝突
+            for (let i = enemyBullets.length - 1; i >= 0; i--) {
+                if (collision(enemyBullets[i], player)) {
+                    gameOver = true;
+                    break;
+                }
+            }
+
+            // プレイヤーと敵の衝突
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                if (collision(player, enemies[i])) {
+                    gameOver = true;
+                    break;
+                }
+            }
+
+            // プレイヤーとゴールの衝突
+            if (collision(player, goal)) {
+                gameWon = true;
+            }
+        }
+
+        function collision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        function drawPlane(x, y, width, height, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(x, y + height / 2);
+            ctx.lineTo(x + width, y + height / 2);
+            ctx.lineTo(x + width - 10, y + height);
+            ctx.lineTo(x + 10, y + height);
+            ctx.closePath();
+            ctx.fill();
+
+            // 翼を描く
+            ctx.beginPath();
+            ctx.moveTo(x + width / 2 - 20, y + height / 2);
+            ctx.lineTo(x + width / 2 + 20, y + height / 2);
+            ctx.lineTo(x + width / 2, y);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // プレイヤーの描画
+            if (!gameOver) {
+                drawPlane(player.x, player.y, player.width, player.height, 'blue');
+            }
+
+            // 敵の描画
+            for (let enemy of enemies) {
+                drawPlane(enemy.x, enemy.y, enemy.width, enemy.height, 'red');
+            }
+
+            // 弾の描画
+            ctx.fillStyle = 'yellow';
+            for (let bullet of bullets) {
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+            }
+
+            // 敵の弾の描画
+            ctx.fillStyle = 'orange';
+            for (let bullet of enemyBullets) {
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+            }
+
+            // ゴールの描画
+            ctx.fillStyle = 'green';
+            ctx.fillRect(goal.x, goal.y, goal.width, goal.height);
+
+            // ゲームオーバー画面
+            if (gameOver) {
+                ctx.fillStyle = 'black';
+                ctx.font = '48px Arial';
+                ctx.fillText('ゲームオーバー', 250, 300);
+                ctx.font = '24px Arial';
+                ctx.fillText('もう一度やる', 330, 350);
+            }
+
+            // ゲームクリア画面
+            if (gameWon) {
+                ctx.fillStyle = 'black';
+                ctx.font = '48px Arial';
+                ctx.fillText('すごいよ', 300, 300);
+                ctx.font = '24px Arial';
+                ctx.fillText('もう一度やる', 330, 350);
+            }
+        }
+
+        function gameLoop() {
+            if (!gameOver && !gameWon) {
+                movePlayer();
+                createEnemy();
+                moveEnemies();
+                createBullet();
+                moveBullets();
+                createEnemyBullet();
+                moveEnemyBullets();
+                moveGoal();
+                checkCollisions();
+            }
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        canvas.addEventListener('click', (e) => {
+            if (gameOver || gameWon) {
+                gameOver = false;
+                gameWon = false;
+                player.x = 400;
+                player.y = 550;
+                enemies.length = 0;
+                bullets.length = 0;
+                enemyBullets.length = 0;
+                goal.x = 0;
+                goal.y = 0;
+                goal.height = 100; // ゴールのサイズをリセット
+                goal.movingRight = true;
+                lastEnemySpawn = 0;
+            }
+        });
+
+        gameLoop();
+    </script>
+</body>
+</html>
